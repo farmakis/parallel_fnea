@@ -1,0 +1,11 @@
+tests.py
+*.npz
+*.pyc
+__pycache__/
+*.so
+thread_comparison_test.py
+thread_overhead_analysis.py
+thread_overhead_evidence.py
+.vscode/launch.json
+.vscode/settings.json
+python/bin/__init__.py

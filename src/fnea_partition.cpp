@@ -69,27 +69,23 @@ TPL void compute_feature_heterogeneity(
         
         real_t n1 = n[u];
         real_t n2 = n[v];
-        real_t h1 = 0;
-        real_t h2 = 0;
         
-        // Compute heterogeneity for each feature dimension
+        // // Compute merged heterogeneity for each feature dimension
+        real_t hf = 0;
         for (index_t f = 0; f < num_features; ++f) {
-            h1 += h[u * num_features + f];
-            h2 += h[v * num_features + f];
+            real_t h1 = h[u * num_features + f];
+            real_t h2 = h[v * num_features + f];
+
+            real_t x1 = x[u * num_features + f];
+            real_t x2 = x[v * num_features + f];
+
+            // standard deviation proxy of the two nodes mean values
+            real_t hm = std::abs(x1 - x2) / 2.0;
+
+            hf += (n1+n2)*hm - (n1*h1 + n2*h2);
         }
-        
-        // Compute merged heterogeneity (standard deviation of the two nodes)
-        real_t hm = 0;
-        for (index_t f = 0; f < num_features; ++f) {
-            real_t xu = x[u * num_features + f];
-            real_t xv = x[v * num_features + f];
-            real_t diff = xu - xv;
-            hm += diff * diff;
-        }
-        hm = std::sqrt(hm / num_features);
-        
-        // Compute heterogeneity increase
-        hf_out[e] = (n1 + n2) * hm - (n1 * h1 + n2 * h2);
+
+        hf_out[e] = hf;
     }
 }
 
@@ -137,19 +133,20 @@ TPL void compute_shape_heterogeneity(
 }
 
 template<typename index_t>
-index_t rebuild_edges(
-    index_t num_original_edges,
-    const index_t* original_edges,
+void rebuild_edges(
+    index_t E,
+    const index_t* edge_index,
     const index_t* super_index,
-    std::vector<std::pair<index_t, index_t>>& new_edges_out) {
+    std::vector<index_t>& reduced_edges) {
     
     std::unordered_set<std::pair<index_t, index_t>, PairHash<index_t>> edge_set;
     
-    new_edges_out.clear();
+    reduced_edges.clear();
+    reduced_edges.reserve(2 * E);
     
-    for (index_t e = 0; e < num_original_edges; ++e) {
-        index_t u_orig = original_edges[2 * e];
-        index_t v_orig = original_edges[2 * e + 1];
+    for (index_t e = 0; e < E; ++e) {
+        index_t u_orig = edge_index[2 * e];
+        index_t v_orig = edge_index[2 * e + 1];
         
         index_t u_super = super_index[u_orig];
         index_t v_super = super_index[v_orig];
@@ -157,19 +154,75 @@ index_t rebuild_edges(
         // Skip self-loops
         if (u_super == v_super) continue;
         
-        // Ensure consistent edge ordering (u < v)
-        if (u_super > v_super) {
-            std::swap(u_super, v_super);
-        }
+        // // Ensure consistent edge ordering (u < v)
+        // if (u_super > v_super) {
+        //     std::swap(u_super, v_super);
+        // }
         
         std::pair<index_t, index_t> edge(u_super, v_super);
         if (edge_set.find(edge) == edge_set.end()) {
             edge_set.insert(edge);
-            new_edges_out.push_back(edge);
+            reduced_edges.push_back(u_super);
+            reduced_edges.push_back(v_super);
         }
     }
-    
-    return new_edges_out.size();
+
+    // Sort by first endpoint, then second
+    const size_t num_edges = reduced_edges.size() / 2;
+    std::vector<size_t> order(num_edges);
+    std::iota(order.begin(), order.end(), 0); // 0, 1, 2, ...
+
+    std::sort(order.begin(), order.end(), [&](size_t i, size_t j) {
+        index_t u_i = reduced_edges[2 * i];
+        index_t v_i = reduced_edges[2 * i + 1];
+        index_t u_j = reduced_edges[2 * j];
+        index_t v_j = reduced_edges[2 * j + 1];
+
+        if (u_i == u_j) return v_i < v_j;
+        return u_i < u_j;
+    });
+
+    std::vector<index_t> sorted;
+    sorted.reserve(reduced_edges.size());
+    for (size_t idx : order) {
+        sorted.push_back(reduced_edges[2 * idx]);
+        sorted.push_back(reduced_edges[2 * idx + 1]);
+    }
+
+    reduced_edges.swap(sorted);
+}
+
+template <typename index_t>
+void edge_list_to_forward_star(
+    index_t V,                // number of nodes
+    index_t E,                  // number of edges
+    const index_t* edges,     // flat edge list [u0,v0,u1,v1,...], sorted by u
+    index_t* first_edge,        // array of size V+1
+    index_t* reindex          // array of size E (stores destination vertex)
+) {
+    // compute number of edges for each node and keep track of indices
+    for (index_t v = 0; v <= V; ++v) {first_edge[v] = 0;}
+    for (index_t e = 0; e < E; ++e) {
+        index_t u = edges[2 * e];
+        first_edge[u]++;
+    }
+
+    // compute cumulative sum and shift to the right 
+    index_t sum = 0;
+    for (index_t v = 0; v <= V; ++v) {
+        index_t deg = first_edge[v];
+        first_edge[v] = sum;
+        sum += deg;
+    } // first_edge[V] should be total number of edges
+
+    // finalize reindex (NO atomics)
+    // We can reuse a local pointer for position tracking
+    std::vector<index_t> next_pos(first_edge, first_edge + V + 1);
+    for (index_t e = 0; e < E; ++e) {
+        index_t u = edges[2 * e];
+        index_t v = edges[2 * e + 1];
+        reindex[next_pos[u]++] = v;
+    }
 }
 
 TPL FNEA_RESULT fnea_partition_level(
@@ -218,22 +271,21 @@ TPL FNEA_RESULT fnea_partition_level(
     
     // Copy initial graph structure
     index_t num_edges = source_csr[num_nodes] - source_csr[0];
-    std::vector<index_t> current_source_csr(source_csr, source_csr + num_nodes + 1);
+    std::vector<index_t> current_source(source_csr, source_csr + num_nodes + 1);
     std::vector<index_t> current_target(target, target + num_edges);
     std::vector<real_t> current_edge_weights(edge_weights, edge_weights + num_edges);
     
     // Create original edge list for rebuilding
-    std::vector<index_t> original_edges(num_edges * 2);
+    std::vector<index_t> edge_index(num_edges * 2);
     for (index_t u = 0; u < num_nodes; ++u) {
-        for (index_t e = source_csr[u]; e < source_csr[u + 1]; ++e) {
-            original_edges[2 * e] = u;
-            original_edges[2 * e + 1] = target[e];
+        for (index_t e = current_source[u]; e < current_source[u + 1]; ++e) {
+            edge_index[2 * e] = u;
+            edge_index[2 * e + 1] = current_target[e];
         }
     }
     
     index_t current_num_nodes = num_nodes;
     index_t iteration = 0;
-    real_t scale_threshold = scale_factor * scale_factor;
     
     if (compute_time) {
         auto current_time = std::chrono::high_resolution_clock::now();
@@ -245,7 +297,7 @@ TPL FNEA_RESULT fnea_partition_level(
         ++iteration;
         
         if (verbose) {
-            printf("FNEA Iteration %d: Processing %d nodes\\n", (int)iteration, (int)current_num_nodes);
+            printf("FNEA Iteration %d: Processing %d nodes\n", (int)iteration, (int)current_num_nodes);
         }
         
         // Step 1: Find best merge candidate for each node (parallel)
@@ -253,19 +305,19 @@ TPL FNEA_RESULT fnea_partition_level(
         
         #pragma omp parallel for
         for (index_t u = 0; u < current_num_nodes; ++u) {
-            index_t start = current_source_csr[u];
-            index_t end = current_source_csr[u + 1];
+            index_t start = current_source[u];
+            index_t end = current_source[u + 1];
             
             if (end > start) {
-                real_t min_weight = scale_threshold;
+                real_t min_f = scale_factor * scale_factor;
                 index_t best_neighbor = static_cast<index_t>(-1);
                 
                 for (index_t e = start; e < end; ++e) {
                     index_t v = current_target[e];
-                    real_t weight = current_edge_weights[e];
+                    real_t f = current_edge_weights[e];
                     
-                    if (weight < min_weight) {
-                        min_weight = weight;
+                    if (f < min_f) {
+                        min_f = f;
                         best_neighbor = v;
                     }
                 }
@@ -274,103 +326,119 @@ TPL FNEA_RESULT fnea_partition_level(
             }
         }
         
-        // Step 2: Find mutual best-fitting pairs (sequential to avoid conflicts)
-        std::vector<std::pair<index_t, index_t>> merge_pairs;
+        // Step 2: Find mutual pairs and perform merges (fully parallelized)
         std::vector<bool> visited(current_num_nodes, false);
+        index_t merge_count = 0;
         
-        for (index_t u = 0; u < current_num_nodes; ++u) {
-            if (visited[u]) continue;
+        #pragma omp parallel
+        {
+            // Thread-local merge count
+            int local_merges = 0;
             
-            index_t v = merge_candidate[u];
-            if (v == static_cast<index_t>(-1)) continue;
-            
-            if (merge_candidate[v] == u) {
-                merge_pairs.push_back({u, v});
-                visited[u] = true;
-                visited[v] = true;
+            #pragma omp for schedule(static)
+            for (index_t u = 0; u < current_num_nodes; ++u) {
+                index_t v = merge_candidate[u];
+                if (v == static_cast<index_t>(-1)) continue;
+                
+                // Check for mutual best-fitting and ensure we only process each pair once
+                if (merge_candidate[v] == u && u < v) {
+                    // Atomic check-and-set to avoid race conditions
+                    bool can_merge = false;
+                    #pragma omp critical(pair_check)
+                    {
+                        if (!visited[u] && !visited[v]) {
+                            visited[u] = true;
+                            visited[v] = true;
+                            can_merge = true;
+                        }
+                    }
+                    
+                    if (can_merge) {
+                        // Perform merge operations
+                        real_t n_u = n[u];
+                        real_t n_v = n[v];
+                        real_t total_n = n_u + n_v;
+                        
+                        // Update super_index mapping (critical section needed)
+                        #pragma omp critical(super_index_update)
+                        {
+                            for (auto &k : super_index) {
+                                if (k == v) {
+                                    k = u;
+                                }
+                            }
+                        }
+                        
+                        // Update heterogeneity (standard deviation of the two segment means)
+                        for (index_t f = 0; f < num_features; ++f) {
+                            real_t x_u = current_x[u * num_features + f];
+                            real_t x_v = current_x[v * num_features + f];
+                            // Standard deviation of two values: |diff| / sqrt(2)
+                            current_h[u * num_features + f] = std::abs(x_u - x_v) / 2.0;
+                        }
+                        
+                        // Update node feature mean values (weighted average)
+                        for (index_t f = 0; f < num_features; ++f) {
+                            current_x[u * num_features + f] = 
+                                (n_u * current_x[u * num_features + f] + n_v * current_x[v * num_features + f]) / total_n;
+                        }
+                        
+                        // Update bounding box (merged extents)
+                        compute_merged_bounding_box(
+                            &current_pos[u * 3], &current_pos[v * 3],
+                            &current_bb[u * 3], &current_bb[v * 3],
+                            &current_bb[u * 3]
+                        );
+
+                        // Update positions (weighted average)
+                        for (int d = 0; d < 3; ++d) {
+                            current_pos[u * 3 + d] = 
+                                (n_u * current_pos[u * 3 + d] + n_v * current_pos[v * 3 + d]) / total_n;
+                        }
+                        
+                        // Update colors (weighted average)
+                        for (int d = 0; d < 3; ++d) {
+                            current_rgb[u * 3 + d] = 
+                                (n_u * current_rgb[u * 3 + d] + n_v * current_rgb[v * 3 + d]) / total_n;
+                        }
+                        
+                        // Update node weight
+                        n[u] = total_n;
+                        
+                        // Deactivate node v
+                        n[v] = 0;
+                        for (index_t f = 0; f < num_features; ++f) {
+                            current_x[v * num_features + f] = 0;
+                            current_h[v * num_features + f] = 0;
+                        }
+                        for (int dim = 0; dim < 3; ++dim) {
+                            current_pos[v * 3 + dim] = 0;
+                            current_rgb[v * 3 + dim] = 0;
+                            current_bb[v * 3 + dim] = 0;
+                        }
+                        
+                        local_merges++;
+                    }
+                }
             }
+            
+            // Accumulate merge count
+            #pragma omp atomic
+            merge_count += local_merges;
         }
         
-        if (merge_pairs.empty()) {
+        if (merge_count == 0) {
             if (verbose) {
-                printf("No more merges possible. Stopping.\\n");
+                printf("No more merges possible. Stopping.\n");
             }
             break;
         }
         
         if (verbose) {
-            printf("Iteration %d: %d merges\\n", (int)iteration, (int)merge_pairs.size());
+            printf("Iteration %d: %d merges\n", (int)iteration, (int)merge_count);
         }
         
-        // Step 3: Perform merges (can be parallelized with care)
-        #pragma omp parallel for
-        for (size_t i = 0; i < merge_pairs.size(); ++i) {
-            index_t u = merge_pairs[i].first;
-            index_t v = merge_pairs[i].second;
-            
-            real_t n_u = n[u];
-            real_t n_v = n[v];
-            real_t total_n = n_u + n_v;
-            
-            // Update super_index mapping
-            #pragma omp critical
-            {
-                for (size_t k = 0; k < super_index.size(); ++k) {
-                    if (super_index[k] == v) {
-                        super_index[k] = u;
-                    }
-                }
-            }
-            
-            // Update node features (weighted average)
-            for (index_t f = 0; f < num_features; ++f) {
-                current_x[u * num_features + f] = 
-                    (n_u * current_x[u * num_features + f] + n_v * current_x[v * num_features + f]) / total_n;
-            }
-            
-            // Update heterogeneity (standard deviation of merged features)
-            for (index_t f = 0; f < num_features; ++f) {
-                real_t xu = current_x[u * num_features + f];
-                real_t xv = current_x[v * num_features + f];
-                current_h[u * num_features + f] = std::abs(xu - xv);
-            }
-            
-            // Update positions (weighted average)
-            for (int d = 0; d < 3; ++d) {
-                current_pos[u * 3 + d] = 
-                    (n_u * current_pos[u * 3 + d] + n_v * current_pos[v * 3 + d]) / total_n;
-            }
-            
-            // Update colors (weighted average)
-            for (int d = 0; d < 3; ++d) {
-                current_rgb[u * 3 + d] = 
-                    (n_u * current_rgb[u * 3 + d] + n_v * current_rgb[v * 3 + d]) / total_n;
-            }
-            
-            // Update bounding box (merged extents)
-            compute_merged_bounding_box(
-                &current_pos[u * 3], &current_pos[v * 3],
-                &current_bb[u * 3], &current_bb[v * 3],
-                &current_bb[u * 3]
-            );
-            
-            // Update node weight
-            n[u] = total_n;
-            
-            // Deactivate node v
-            n[v] = 0;
-            for (index_t f = 0; f < num_features; ++f) {
-                current_x[v * num_features + f] = 0;
-                current_h[v * num_features + f] = 0;
-            }
-            for (int d = 0; d < 3; ++d) {
-                current_pos[v * 3 + d] = 0;
-                current_rgb[v * 3 + d] = 0;
-                current_bb[v * 3 + d] = 0;
-            }
-        }
-        
-        // Step 4: Compact representation (remove deactivated nodes)
+        // Step 4: Compact representation (remove deactivated nodes - remap arrays)
         std::vector<bool> active_mask(current_num_nodes);
         for (index_t i = 0; i < current_num_nodes; ++i) {
             active_mask[i] = n[i] > 0;
@@ -392,7 +460,7 @@ TPL FNEA_RESULT fnea_partition_level(
         std::vector<real_t> new_h(new_num_nodes * num_features);
         std::vector<real_t> new_bb(new_num_nodes * 3);
         std::vector<real_t> new_rgb(new_num_nodes * 3);
-        
+
         new_index = 0;
         for (index_t i = 0; i < current_num_nodes; ++i) {
             if (active_mask[i]) {
@@ -416,56 +484,43 @@ TPL FNEA_RESULT fnea_partition_level(
         }
         
         // Step 5: Rebuild graph structure
-        std::vector<std::pair<index_t, index_t>> new_edges;
-        rebuild_edges(static_cast<index_t>(original_edges.size() / 2), original_edges.data(), super_index.data(), new_edges);
+        index_t num_edges = static_cast<index_t>(edge_index.size() / 2);
+        std::vector<index_t> reduced_edge_index;
+        // reduced_edge_index.resize(num_edges * 2);
+        rebuild_edges(num_edges, edge_index.data(), super_index.data(), reduced_edge_index);
         
-        // Convert to CSR format (simplified - would need proper CSR conversion)
-        current_source_csr.assign(new_num_nodes + 1, 0);
-        current_target.clear();
-        current_edge_weights.clear();
-        
-        // Build CSR structure
-        for (const auto& edge : new_edges) {
-            current_source_csr[edge.first + 1]++;
-        }
-        
-        // Convert counts to offsets
-        for (index_t i = 1; i <= new_num_nodes; ++i) {
-            current_source_csr[i] += current_source_csr[i - 1];
-        }
-        
-        current_target.resize(new_edges.size());
-        current_edge_weights.resize(new_edges.size());
-        
-        std::vector<index_t> edge_counters(new_num_nodes, 0);
-        for (const auto& edge : new_edges) {
-            index_t pos = current_source_csr[edge.first] + edge_counters[edge.first]++;
-            current_target[pos] = edge.second;
-        }
+        // Convert to CSR format (forward star)
+        index_t new_num_edges = static_cast<index_t>(reduced_edge_index.size() / 2);
+        std::vector<index_t> new_source(new_num_nodes + 1);
+        std::vector<index_t> new_target(new_num_edges);
+
+        edge_list_to_forward_star<index_t>(
+            new_num_nodes,
+            new_num_edges,
+            reduced_edge_index.data(),
+            new_source.data(),
+            new_target.data()
+        );
         
         // Step 6: Recompute edge weights
-        std::vector<index_t> edge_list(new_edges.size() * 2);
-        for (size_t i = 0; i < new_edges.size(); ++i) {
-            edge_list[2 * i] = new_edges[i].first;
-            edge_list[2 * i + 1] = new_edges[i].second;
-        }
-        
-        std::vector<real_t> hf(new_edges.size());
-        std::vector<real_t> hs(new_edges.size());
-        
+        // reduced_edge_index is already a flat vector [u0,v0,u1,v1,...]
+        std::vector<real_t> hf(new_num_edges);
+        std::vector<real_t> hs(new_num_edges);
+
         compute_feature_heterogeneity(
-            static_cast<index_t>(new_edges.size()), num_features, edge_list.data(),
+            new_num_edges, num_features, reduced_edge_index.data(),
             new_n.data(), new_x.data(), new_h.data(), hf.data()
         );
         
         compute_shape_heterogeneity(
-            static_cast<index_t>(new_edges.size()), edge_list.data(),
+            new_num_edges, reduced_edge_index.data(),
             new_n.data(), new_pos.data(), new_bb.data(),
             compactness, hs.data()
         );
-        
-        for (size_t i = 0; i < new_edges.size(); ++i) {
-            current_edge_weights[i] = (1 - spatial_weight) * hf[i] + spatial_weight * hs[i];
+
+        std::vector<real_t> new_edge_weights(new_num_edges);
+        for (index_t e = 0; e < new_num_edges; ++e) {
+            new_edge_weights[e] = (1 - spatial_weight) * hf[e] + spatial_weight * hs[e];
         }
         
         // Update working arrays
@@ -476,6 +531,9 @@ TPL FNEA_RESULT fnea_partition_level(
         current_bb = std::move(new_bb);
         current_rgb = std::move(new_rgb);
         current_num_nodes = new_num_nodes;
+        current_source = std::move(new_source);
+        current_target = std::move(new_target);
+        current_edge_weights = std::move(new_edge_weights);
         
         if (compute_time) {
             auto current_time = std::chrono::high_resolution_clock::now();
@@ -489,7 +547,7 @@ TPL FNEA_RESULT fnea_partition_level(
     result.pos = std::move(current_pos);
     result.bb = std::move(current_bb);
     result.rgb = std::move(current_rgb);
-    result.source_csr = std::move(current_source_csr);
+    result.source_csr = std::move(current_source);
     result.target = std::move(current_target);
     result.edge_weights = std::move(current_edge_weights);
     result.num_iterations = iteration;
@@ -543,8 +601,8 @@ template void compute_shape_heterogeneity<float, int32_t>(
 template void compute_shape_heterogeneity<double, int32_t>(
     int32_t, const int32_t*, const double*, const double*, const double*, double, double*);
 
-template int32_t rebuild_edges<int32_t>(
-    int32_t, const int32_t*, const int32_t*, std::vector<std::pair<int32_t, int32_t>>&);
+template void rebuild_edges<int32_t>(
+    int32_t, const int32_t*, const int32_t*, std::vector<int32_t>&);
 
 template void compute_merged_bounding_box<float>(
     const float*, const float*, const float*, const float*, float*);
@@ -574,8 +632,8 @@ template void compute_shape_heterogeneity<float, uint32_t>(
 template void compute_shape_heterogeneity<double, uint32_t>(
     uint32_t, const uint32_t*, const double*, const double*, const double*, double, double*);
 
-template uint32_t rebuild_edges<uint32_t>(
-    uint32_t, const uint32_t*, const uint32_t*, std::vector<std::pair<uint32_t, uint32_t>>&);
+template void rebuild_edges<uint32_t>(
+    uint32_t, const uint32_t*, const uint32_t*, std::vector<uint32_t>&);
 
 template void compute_merged_bounding_box<float>(
     const float*, const float*, const float*, const float*, float*);

@@ -2,7 +2,10 @@
 
 #include <vector>
 #include <cstdint>
+#include <cstddef>
 #include <memory>
+#include <algorithm>
+#include <numeric>
 
 /**
  * @file fnea_partition.hpp
@@ -152,18 +155,38 @@ void compute_shape_heterogeneity(
  * @brief Rebuild graph edges after node merging
  * 
  * @tparam index_t Integer type for indices
- * @param num_original_edges Number of original edges
- * @param original_edges Original edge list [num_original_edges * 2]
+ * @param num_edges Number of original edges
+ * @param edge_index Original edge list [num_edges * 2]
  * @param super_index Super node mapping [num_original_nodes]
  * @param new_edges_out Output new edge list
  * @return Number of new edges
  */
 template<typename index_t>
-index_t rebuild_edges(
-    index_t num_original_edges,
-    const index_t* original_edges,
+void rebuild_edges(
+    index_t num_edges,
+    const index_t* edge_index,
     const index_t* super_index,
-    std::vector<std::pair<index_t, index_t>>& new_edges_out
+    std::vector<index_t>& reduced_edges
+);
+
+/**
+ * @brief Convert edge list to forward star (CSR-like) representation
+ * 
+ * @tparam vertex_t Integer type for vertex indices
+ * @tparam edge_t Integer type for edge indices
+ * @param V Number of vertices
+ * @param E Number of edges
+ * @param edges Flat edge list [u0,v0,u1,v1,...]
+ * @param first_edge Output array of size V+1 (first_edge[i] is the start of edges for vertex i)
+ * @param reindex Output array of size E (stores destination vertex for each edge)
+ */
+template <typename index_t>
+void edge_list_to_forward_star(
+    index_t V,
+    index_t E,
+    const index_t* edges,
+    index_t* first_edge,
+    index_t* reindex
 );
 
 /**
