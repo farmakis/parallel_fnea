@@ -10,7 +10,7 @@ if bin_path not in sys.path:
 from fnea_partition_cpy import fnea_partition_level_cpy
 
 def fnea_partition_level(
-    pos, x, h, bb, rgb, source_csr, target, edge_weights, vert_weights,
+    coords, pos, x, h, bb, rgb, source_csr, target, edge_weights, vert_weights,
     scale_factor=10.0, compactness=0.2, spatial_weight=0.5,
     verbose=False, max_num_threads=0, balance_parallel_split=True,
     compute_time=True, compute_list=True, compute_graph=True):
@@ -23,6 +23,8 @@ def fnea_partition_level(
     
     Parameters
     ----------
+    coords : numpy.ndarray
+        Node grid coordinates, shape (num_nodes, 3), C-contiguous
     pos : numpy.ndarray
         Node positions, shape (num_nodes, 3), C-contiguous
     x : numpy.ndarray  
@@ -64,6 +66,8 @@ def fnea_partition_level(
     -------
     super_index : numpy.ndarray
         Mapping from original to super nodes, shape (num_original_nodes,), uint32
+    coords_out : numpy.ndarray
+        Updated node grid coordinates, shape (num_final_nodes, 3), same type as input
     pos_out : numpy.ndarray
         Updated node positions, shape (num_final_nodes, 3), same type as input
     bb_out : numpy.ndarray
@@ -105,6 +109,7 @@ def fnea_partition_level(
     >>> # Prepare data (C-contiguous arrays)
     >>> num_nodes = 1000
     >>> num_features = 3
+    >>> coords = np.random.rand(num_nodes, 3).astype(np.float32)
     >>> pos = np.random.rand(num_nodes, 3).astype(np.float32)
     >>> x = np.random.rand(num_nodes, num_features).astype(np.float32)
     >>> h = np.zeros_like(x)
@@ -141,6 +146,7 @@ def fnea_partition_level(
     
     # Validate array types and convert if necessary
     required_arrays = {
+        'coords': (coords, (3, None)),
         'pos': (pos, (3, None)),
         'x': (x, (None, None)), 
         'h': (h, (None, None)),
@@ -151,6 +157,11 @@ def fnea_partition_level(
     }
     
     # Convert in numpy array scalar entry
+    if (type(coords) != np.ndarray
+        or coords.dtype not in [real_t]):
+        raise TypeError("FNEA partition: argument 'coords' must "
+                        "be a numpy array of type float32 or float64.")
+    
     if (type(pos) != np.ndarray
         or pos.dtype not in [real_t]):
         raise TypeError("FNEA partition: argument 'pos' must "
@@ -192,6 +203,9 @@ def fnea_partition_level(
                         "numpy array of type uint32.")
     
     # Validate dimensions - expect (num_nodes, features) format
+    if coords.ndim != 2 or coords.shape[1] != 3:
+        raise ValueError("FNEA partition: 'coords' must have shape (num_nodes, 3)")
+    
     if pos.ndim != 2 or pos.shape[1] != 3:
         raise ValueError("FNEA partition: 'pos' must have shape (num_nodes, 3)")
     
@@ -247,6 +261,7 @@ def fnea_partition_level(
     
     # Arrays are expected in (num_nodes, features) format
     # Ensure they're C-contiguous for efficient processing
+    coords_c = np.ascontiguousarray(coords)
     pos_c = np.ascontiguousarray(pos)
     x_c = np.ascontiguousarray(x) 
     h_c = np.ascontiguousarray(h)
@@ -259,6 +274,7 @@ def fnea_partition_level(
     
     # Call the C++ extension
     return fnea_partition_level_cpy(
+        coords_c,
         pos_c, 
         x_c, 
         h_c, 

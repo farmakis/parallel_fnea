@@ -93,7 +93,7 @@ TPL void compute_shape_heterogeneity(
     index_t num_edges,
     const index_t* edges,
     const real_t* n,
-    const real_t* pos,
+    const real_t* coords,
     const real_t* bb,
     real_t compactness,
     real_t* hs_out) {
@@ -106,15 +106,15 @@ TPL void compute_shape_heterogeneity(
         real_t n1 = n[u];
         real_t n2 = n[v];
         
-        // Get node positions and bounding boxes
-        const real_t* pos_u = &pos[u * 3];
-        const real_t* pos_v = &pos[v * 3];
+        // Get node grid coordinates and bounding boxes
+        const real_t* coords_u = &coords[u * 3];
+        const real_t* coords_v = &coords[v * 3];
         const real_t* bb_u = &bb[u * 3];
         const real_t* bb_v = &bb[v * 3];
         
         // Compute merged bounding box
         real_t bb_merged[3];
-        compute_merged_bounding_box(pos_u, pos_v, bb_u, bb_v, bb_merged);
+        compute_merged_bounding_box(coords_u, coords_v, bb_u, bb_v, bb_merged);
         
         // Compute compactness measures
         real_t comp1 = 0, comp2 = 0, compm = 0;
@@ -228,6 +228,7 @@ void edge_list_to_forward_star(
 TPL FNEA_RESULT fnea_partition_level(
     index_t num_nodes,
     index_t num_features,
+    const real_t* coords,
     const real_t* pos,
     const real_t* x,
     const real_t* h,
@@ -260,6 +261,7 @@ TPL FNEA_RESULT fnea_partition_level(
     
     // Initialize working arrays
     std::vector<real_t> n(vert_weights, vert_weights + num_nodes);
+    std::vector<real_t> current_coords(coords, coords + num_nodes * 3);
     std::vector<real_t> current_pos(pos, pos + num_nodes * 3);
     std::vector<real_t> current_x(x, x + num_nodes * num_features);
     std::vector<real_t> current_h(h, h + num_nodes * num_features);
@@ -385,11 +387,17 @@ TPL FNEA_RESULT fnea_partition_level(
                         
                         // Update bounding box (merged extents)
                         compute_merged_bounding_box(
-                            &current_pos[u * 3], &current_pos[v * 3],
+                            &current_coords[u * 3], &current_coords[v * 3],
                             &current_bb[u * 3], &current_bb[v * 3],
                             &current_bb[u * 3]
                         );
 
+                        // Update grid coordinates (weighted average)
+                        for (int d = 0; d < 3; ++d) {
+                            current_coords[u * 3 + d] = 
+                                (n_u * current_coords[u * 3 + d] + n_v * current_coords[v * 3 + d]) / total_n;
+                        }
+                        
                         // Update positions (weighted average)
                         for (int d = 0; d < 3; ++d) {
                             current_pos[u * 3 + d] = 
@@ -412,6 +420,7 @@ TPL FNEA_RESULT fnea_partition_level(
                             current_h[v * num_features + f] = 0;
                         }
                         for (int dim = 0; dim < 3; ++dim) {
+                            current_coords[v * 3 + dim] = 0;
                             current_pos[v * 3 + dim] = 0;
                             current_rgb[v * 3 + dim] = 0;
                             current_bb[v * 3 + dim] = 0;
@@ -455,6 +464,7 @@ TPL FNEA_RESULT fnea_partition_level(
         // Compact arrays
         index_t new_num_nodes = new_index;
         std::vector<real_t> new_n(new_num_nodes);
+        std::vector<real_t> new_coords(new_num_nodes * 3);
         std::vector<real_t> new_pos(new_num_nodes * 3);
         std::vector<real_t> new_x(new_num_nodes * num_features);
         std::vector<real_t> new_h(new_num_nodes * num_features);
@@ -466,6 +476,7 @@ TPL FNEA_RESULT fnea_partition_level(
             if (active_mask[i]) {
                 new_n[new_index] = n[i];
                 for (int d = 0; d < 3; ++d) {
+                    new_coords[new_index * 3 + d] = current_coords[i * 3 + d];
                     new_pos[new_index * 3 + d] = current_pos[i * 3 + d];
                     new_bb[new_index * 3 + d] = current_bb[i * 3 + d];
                     new_rgb[new_index * 3 + d] = current_rgb[i * 3 + d];
@@ -514,7 +525,7 @@ TPL FNEA_RESULT fnea_partition_level(
         
         compute_shape_heterogeneity(
             new_num_edges, reduced_edge_index.data(),
-            new_n.data(), new_pos.data(), new_bb.data(),
+            new_n.data(), new_coords.data(), new_bb.data(),
             compactness, hs.data()
         );
 
@@ -525,6 +536,7 @@ TPL FNEA_RESULT fnea_partition_level(
         
         // Update working arrays
         n = std::move(new_n);
+        current_coords = std::move(new_coords);
         current_pos = std::move(new_pos);
         current_x = std::move(new_x);
         current_h = std::move(new_h);
@@ -544,6 +556,7 @@ TPL FNEA_RESULT fnea_partition_level(
     
     // Prepare results
     result.super_index = std::move(super_index);
+    result.coords = std::move(current_coords);
     result.pos = std::move(current_pos);
     result.bb = std::move(current_bb);
     result.rgb = std::move(current_rgb);
@@ -580,12 +593,12 @@ TPL FNEA_RESULT fnea_partition_level(
 /* use of unsigned counter in parallel loops requires OpenMP 3.0;
  * although published in 2008, MSVC still does not support it as of 2020 */
 template FNEAResult<float, int32_t> fnea_partition_level<float, int32_t>(
-    int32_t, int32_t, const float*, const float*, const float*, const float*, const float*,
+    int32_t, int32_t, const float*, const float*, const float*, const float*, const float*, const float*,
     const int32_t*, const int32_t*, const float*, const float*,
     float, float, float, bool, int, bool, bool, bool, bool);
 
 template FNEAResult<double, int32_t> fnea_partition_level<double, int32_t>(
-    int32_t, int32_t, const double*, const double*, const double*, const double*, const double*,
+    int32_t, int32_t, const double*, const double*, const double*, const double*, const double*, const double*,
     const int32_t*, const int32_t*, const double*, const double*,
     double, double, double, bool, int, bool, bool, bool, bool);
 
@@ -611,12 +624,12 @@ template void compute_merged_bounding_box<double>(
     const double*, const double*, const double*, const double*, double*);
 #else
 template FNEAResult<float, uint32_t> fnea_partition_level<float, uint32_t>(
-    uint32_t, uint32_t, const float*, const float*, const float*, const float*, const float*,
+    uint32_t, uint32_t, const float*, const float*, const float*, const float*, const float*, const float*,
     const uint32_t*, const uint32_t*, const float*, const float*,
     float, float, float, bool, int, bool, bool, bool, bool);
 
 template FNEAResult<double, uint32_t> fnea_partition_level<double, uint32_t>(
-    uint32_t, uint32_t, const double*, const double*, const double*, const double*, const double*,
+    uint32_t, uint32_t, const double*, const double*, const double*, const double*, const double*, const double*,
     const uint32_t*, const uint32_t*, const double*, const double*,
     double, double, double, bool, int, bool, bool, bool, bool);
 

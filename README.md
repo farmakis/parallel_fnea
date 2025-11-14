@@ -35,7 +35,7 @@ The parallel implementation uses OpenMP to accelerate the computationally intens
 
 ```
 parallel_fnea/
-├── include/           # C++ header files
+├── include/          # C++ header files
 ├── src/              # C++ source files
 ├── python/           # Python bindings
 │   ├── cpython/      # C Python interface
@@ -64,6 +64,7 @@ The compiled module will be available in the `bin/` directory.
 from parallel_fnea import fnea_partition_level
 
 # Prepare your data
+coords = np.array(...)      # Node grid coordinates (N x 3)
 pos = np.array(...)      # Node positions (N x 3)
 x = np.array(...)        # Node features (N x D)
 h = np.array(...)        # Node heterogeneity (N x D)
@@ -74,8 +75,8 @@ target = np.array(...)     # CSR target indices
 edge_weights = np.array(...) # Edge weights
 
 # Run FNEA partition
-super_index, pos_out, bb_out, rgb_out, x_c, cluster, edges, times = fnea_partition_level(
-    pos, x, h, bb, rgb, source_csr, target, edge_weights,
+super_index, coords_out pos_out, bb_out, rgb_out, x_c, cluster, edges, times = fnea_partition_level(
+    coords, pos, x, h, bb, rgb, source_csr, target, edge_weights,
     vert_weights=node_counts,
     scale_factor=10.0,
     compactness=0.2,

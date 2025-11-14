@@ -25,6 +25,7 @@ template<typename real_t, typename index_t>
 struct FNEAResult {
     // Output data
     std::vector<index_t> super_index;     ///< Mapping from original to super nodes
+    std::vector<real_t> coords;           ///< Updated node grid coordinates
     std::vector<real_t> pos;              ///< Updated node positions
     std::vector<real_t> bb;               ///< Updated bounding boxes
     std::vector<real_t> rgb;              ///< Updated node colors
@@ -58,6 +59,7 @@ struct FNEAResult {
  * 
  * @param num_nodes Number of nodes in the graph
  * @param num_features Number of feature dimensions
+ * @param coords Node grid coordinates [num_nodes * 3]
  * @param pos Node positions [num_nodes * 3]
  * @param x Node features [num_nodes * num_features]
  * @param h Node heterogeneity [num_nodes * num_features]
@@ -83,6 +85,7 @@ template<typename real_t, typename index_t>
 FNEAResult<real_t, index_t> fnea_partition_level(
     index_t num_nodes,
     index_t num_features,
+    const real_t* coords,
     const real_t* pos,
     const real_t* x,
     const real_t* h,
