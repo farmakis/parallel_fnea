@@ -154,22 +154,58 @@ TPL void compute_shape_heterogeneity(
         auto eigs_v = solver_v.eigenvalues();
         auto eigs_merged = solver_merged.eigenvalues();
         
-        // Compute OBB extents from eigenvalues
-        // For an ellipsoid with eigenvalues λ₁, λ₂, λ₃ (variances):
-        // Extent along each axis ≈ 2*sqrt(λᵢ) (roughly 2σ coverage)
+        // Compute volume and surface area following pgeof approach
+        // pgeof computes:
+        //   length = √λ₀ (largest eigenvalue)
+        //   surface = √(λ₀*λ₁)
+        //   volume = ∛(λ₀*λ₁*λ₂)
+        // We compute compactness as: volume / surface
+        
         real_t eps = std::numeric_limits<real_t>::epsilon();
-        real_t extent1[3], extent2[3], extentm[3];
+        
+        // Get square roots of eigenvalues
+        real_t sqrt_eigs_u[3], sqrt_eigs_v[3], sqrt_eigs_m[3];
         for (int i = 0; i < 3; ++i) {
-            extent1[i] = 2.0 * std::sqrt(std::max(eigs_u(i), eps));
-            extent2[i] = 2.0 * std::sqrt(std::max(eigs_v(i), eps));
-            extentm[i] = 2.0 * std::sqrt(std::max(eigs_merged(i), eps));
+            sqrt_eigs_u[i] = std::sqrt(std::max(eigs_u(i), eps));
+            sqrt_eigs_v[i] = std::sqrt(std::max(eigs_v(i), eps));
+            sqrt_eigs_m[i] = std::sqrt(std::max(eigs_merged(i), eps));
         }
         
-        // Compute compactness: mean extent / cube root of point count
-        // This represents how "spread out" the points are relative to their count
-        real_t comp1 = (extent1[0] + extent1[1] + extent1[2]) / 3.0 / std::cbrt(n1);
-        real_t comp2 = (extent2[0] + extent2[1] + extent2[2]) / 3.0 / std::cbrt(n2);
-        real_t compm = (extentm[0] + extentm[1] + extentm[2]) / 3.0 / std::cbrt(n1 + n2);
+        // Extract individual eigenvalues (λ₀ >= λ₁ >= λ₂)
+        // eigvals are sorted in ascending order, so: λ₂, λ₁, λ₀
+        real_t sqrt_l0_1 = sqrt_eigs_u[2];  // √λ₀ (largest)
+        real_t sqrt_l1_1 = sqrt_eigs_u[1];  // √λ₁ (middle)
+        real_t sqrt_l2_1 = sqrt_eigs_u[0];  // √λ₂ (smallest)
+        
+        real_t sqrt_l0_2 = sqrt_eigs_v[2];
+        real_t sqrt_l1_2 = sqrt_eigs_v[1];
+        real_t sqrt_l2_2 = sqrt_eigs_v[0];
+        
+        real_t sqrt_l0_m = sqrt_eigs_m[2];
+        real_t sqrt_l1_m = sqrt_eigs_m[1];
+        real_t sqrt_l2_m = sqrt_eigs_m[0];
+        
+        // Compute volume and surface following pgeof
+        // volume = ∛(√λ₀ * √λ₁ * √λ₂)
+        // surface = √(√λ₀ * √λ₁)
+        real_t one_third = 1.0 / 3.0;
+        
+        real_t volume1 = std::pow(sqrt_l0_1 * sqrt_l1_1 * sqrt_l2_1 + eps, one_third);
+        real_t surface1 = std::sqrt(sqrt_l0_1 * sqrt_l1_1 + eps);
+        
+        real_t volume2 = std::pow(sqrt_l0_2 * sqrt_l1_2 * sqrt_l2_2 + eps, one_third);
+        real_t surface2 = std::sqrt(sqrt_l0_2 * sqrt_l1_2 + eps);
+        
+        real_t volumem = std::pow(sqrt_l0_m * sqrt_l1_m * sqrt_l2_m + eps, one_third);
+        real_t surfacem = std::sqrt(sqrt_l0_m * sqrt_l1_m + eps);
+        
+        // Compactness: (36 * π * volume²) / surface³
+        real_t pi = std::acos(-1.0);  // More accurate than M_PI
+        real_t coeff = 36.0 * pi;
+        
+        real_t comp1 = (coeff * (volume1 * volume1)) / (surface1 * surface1 * surface1);
+        real_t comp2 = (coeff * (volume2 * volume2)) / (surface2 * surface2 * surface2);
+        real_t compm = (coeff * (volumem * volumem)) / (surfacem * surfacem * surfacem);
         
         // Compute shape heterogeneity increase
         auto hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
