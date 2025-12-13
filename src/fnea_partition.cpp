@@ -177,16 +177,22 @@ TPL void compute_shape_heterogeneity(
         auto eigs_v = solver_v.eigenvalues();
         auto eigs_merged = solver_merged.eigenvalues();
         
-        // Normalize eigenvalues by the maximum (last) eigenvalue
+        // Compute OBB extents from eigenvalues
+        // For an ellipsoid with eigenvalues λ₁, λ₂, λ₃ (variances):
+        // Extent along each axis ≈ 2*sqrt(λᵢ) (roughly 2σ coverage)
         real_t eps = std::numeric_limits<real_t>::epsilon();
-        eigs_u /= (eigs_u(2) + eps);
-        eigs_v /= (eigs_v(2) + eps);
-        eigs_merged /= (eigs_merged(2) + eps);
+        real_t extent1[3], extent2[3], extentm[3];
+        for (int i = 0; i < 3; ++i) {
+            extent1[i] = 2.0 * std::sqrt(std::max(eigs_u(i), eps));
+            extent2[i] = 2.0 * std::sqrt(std::max(eigs_v(i), eps));
+            extentm[i] = 2.0 * std::sqrt(std::max(eigs_merged(i), eps));
+        }
         
-        // Compute a 3D compactness index based on volume-to-surface ratio
-        real_t comp1 = compute_compactness_helper(eigs_u);
-        real_t comp2 = compute_compactness_helper(eigs_v);
-        real_t compm = compute_compactness_helper(eigs_merged);
+        // Compute compactness: mean extent / cube root of point count
+        // This represents how "spread out" the points are relative to their count
+        real_t comp1 = (extent1[0] + extent1[1] + extent1[2]) / 3.0 / std::cbrt(n1);
+        real_t comp2 = (extent2[0] + extent2[1] + extent2[2]) / 3.0 / std::cbrt(n2);
+        real_t compm = (extentm[0] + extentm[1] + extentm[2]) / 3.0 / std::cbrt(n1 + n2);
         
         // Compute shape heterogeneity increase
         auto hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
