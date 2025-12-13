@@ -98,7 +98,7 @@ TPL void compute_feature_heterogeneity(
             // standard deviation proxy of the two nodes mean values
             real_t hm = std::abs(x1 - x2) / 2.0;
 
-            hf += (n1+n2)*hm - (n1*h1 + n2*h2);
+            hf += std::abs((n1+n2)*hm - (n1*h1 + n2*h2));
         }
 
         hf_out[e] = hf;
@@ -160,7 +160,8 @@ TPL void compute_shape_heterogeneity(
         real_t compm = eigs_merged(0) / (eigs_merged(2) + real_t(1e-10));
         
         // Compute shape heterogeneity increase
-        hs_out[e] = (n1 + n2) * compm - (n1 * comp1 + n2 * comp2);
+        hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
+        hs_out[e] = hs;
     }
 }
 
