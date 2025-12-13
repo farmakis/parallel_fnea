@@ -160,7 +160,7 @@ TPL void compute_shape_heterogeneity(
         real_t compm = eigs_merged(0) / (eigs_merged(2) + real_t(1e-10));
         
         // Compute shape heterogeneity increase
-        hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
+        auto hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
         hs_out[e] = hs;
     }
 }
