@@ -121,8 +121,8 @@ namespace {
         real_t volume_safe = std::max(volume, eps);
         real_t surface_area_safe = std::max(surface_area, eps);
 
-        // Compactness = (36 * pi * V^2/3) / (S^3/2)
-        real_t comp = (36.0 * M_PI * std::pow(volume_safe, 2.0 / 3.0)) / std::pow(surface_area_safe, 1.5);
+        // Compactness = (36 * pi * V^2) / (S^3)
+        real_t comp = (36.0 * M_PI * std::pow(volume_safe, 2)) / std::pow(surface_area_safe, 3);
         return comp;
     }
 }
