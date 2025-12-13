@@ -105,6 +105,28 @@ TPL void compute_feature_heterogeneity(
     }
 }
 
+namespace {
+    template<typename EigType>
+    typename EigType::Scalar compute_compactness_helper(const EigType& eigenvalues) {
+        typedef typename EigType::Scalar real_t;
+        
+        // Compute a 3D compactness index based on volume-to-surface ratio
+        real_t volume = eigenvalues(0) * eigenvalues(1) * eigenvalues(2);
+        real_t surface_area =
+            eigenvalues(0) * eigenvalues(1) +
+            eigenvalues(1) * eigenvalues(2) +
+            eigenvalues(2) * eigenvalues(0);
+
+        real_t eps = std::numeric_limits<real_t>::epsilon();
+        real_t volume_safe = std::max(volume, eps);
+        real_t surface_area_safe = std::max(surface_area, eps);
+
+        // Compactness = (36 * pi * V^2/3) / (S^3/2)
+        real_t comp = (36.0 * M_PI * std::pow(volume_safe, 2.0 / 3.0)) / std::pow(surface_area_safe, 1.5);
+        return comp;
+    }
+}
+
 TPL void compute_shape_heterogeneity(
     index_t num_edges,
     const index_t* edges,
@@ -154,10 +176,10 @@ TPL void compute_shape_heterogeneity(
         auto eigs_v = solver_v.eigenvalues();
         auto eigs_merged = solver_merged.eigenvalues();
         
-        // Compute compactness as eigen-based scattering (ratio of smallest to largest eigenvalue)
-        real_t comp1 = (eigs_u(0) + eigs_u(1)) / (eigs_u(2) + real_t(1e-10));   // scattering = λ_min / λ_max
-        real_t comp2 = (eigs_v(0) + eigs_v(1)) / (eigs_v(2) + real_t(1e-10));
-        real_t compm = (eigs_merged(0) + eigs_merged(1)) / (eigs_merged(2) + real_t(1e-10));
+        // Compute a 3D compactness index based on volume-to-surface ratio
+        real_t comp1 = compute_compactness_helper(eigs_u);
+        real_t comp2 = compute_compactness_helper(eigs_v);
+        real_t compm = compute_compactness_helper(eigs_merged);
         
         // Compute shape heterogeneity increase
         auto hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
