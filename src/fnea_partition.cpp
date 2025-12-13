@@ -543,12 +543,15 @@ TPL FNEA_RESULT fnea_partition_level(
                 for (int d = 0; d < 3; ++d) {
                     new_coords[new_index * 3 + d] = current_coords[i * 3 + d];
                     new_pos[new_index * 3 + d] = current_pos[i * 3 + d];
-                    new_cov[new_index * 9 + d] = current_cov[i * 9 + d];
                     new_rgb[new_index * 3 + d] = current_rgb[i * 3 + d];
                 }
                 for (index_t f = 0; f < num_features; ++f) {
                     new_x[new_index * num_features + f] = current_x[i * num_features + f];
                     new_h[new_index * num_features + f] = current_h[i * num_features + f];
+                }
+                // Copy all 9 elements of the covariance matrix (3x3 flattened)
+                for (int d = 0; d < 9; ++d) {
+                    new_cov[new_index * 9 + d] = current_cov[i * 9 + d];
                 }
                 new_index++;
             }
