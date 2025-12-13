@@ -101,7 +101,7 @@ TPL void compute_feature_heterogeneity(
             hf += std::abs((n1+n2)*hm - (n1*h1 + n2*h2));
         }
 
-        hf_out[e] = hf;
+        hf_out[e] = hf / num_features; // average over features
     }
 }
 
