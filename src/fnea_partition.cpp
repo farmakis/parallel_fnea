@@ -123,7 +123,7 @@ namespace {
 
         // Compactness = (36 * pi * V^2) / (S^3)
         real_t comp = (36.0 * M_PI * std::pow(volume_safe, 2)) / std::pow(surface_area_safe, 3);
-        real_t comp_shere = 36 .0 * M_PI / std::pow(6, 1.5); // compactness of a sphere
+        real_t comp_shere = 36.0 * M_PI / std::pow(6, 1.5); // compactness of a sphere
         return comp /= comp_shere;  // normalize to [0,1], where 1 is a perfect sphere
     }
 }
