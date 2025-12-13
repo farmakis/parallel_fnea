@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
+#include <Eigen/Dense>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -33,8 +34,8 @@ struct PairHash {
 };
 template<typename real_t>
 void compute_merged_covariance_matrix(
-    const real_t* n1,
-    const real_t* n2,
+    real_t n1,
+    real_t n2,
     const real_t* c1,
     const real_t* c2,
     const real_t* cov1,
@@ -118,8 +119,8 @@ TPL void compute_shape_heterogeneity(
         index_t u = edges[2 * e];
         index_t v = edges[2 * e + 1];
         
-        const real_t* n1 = &n[u];
-        const real_t* n2 = &n[v];
+        real_t n1 = n[u];
+        real_t n2 = n[v];
         
         // Get node grid coordinates and covariance matrices
         const real_t* coords_u = &coords[u * 3];
@@ -159,7 +160,7 @@ TPL void compute_shape_heterogeneity(
         real_t compm = eigs_merged(0) / (eigs_merged(2) + real_t(1e-10));
         
         // Compute shape heterogeneity increase
-        hs_out[e] = (*n1 + *n2) * compm - (*n1 * comp1 + *n2 * comp2);
+        hs_out[e] = (n1 + n2) * compm - (n1 * comp1 + n2 * comp2);
     }
 }
 
@@ -418,7 +419,7 @@ TPL FNEA_RESULT fnea_partition_level(
                         
                         // Update covariance matrix (merged geometries)
                         compute_merged_covariance_matrix(
-                            &n_u, &n_v,
+                            n_u, n_v,
                             &current_coords[u * 3], &current_coords[v * 3],
                             &current_cov[u * 9], &current_cov[v * 9],
                             &current_cov[u * 9]
@@ -651,11 +652,11 @@ template void compute_shape_heterogeneity<double, int32_t>(
 template void rebuild_edges<int32_t>(
     int32_t, const int32_t*, const int32_t*, std::vector<int32_t>&);
 
-template void compute_merged_bounding_box<float>(
-    const float*, const float*, const float*, const float*, float*);
+template void compute_merged_covariance_matrix<float>(
+    float, float, const float*, const float*, const float*, const float*, float*);
 
-template void compute_merged_bounding_box<double>(
-    const double*, const double*, const double*, const double*, double*);
+template void compute_merged_covariance_matrix<double>(
+    double, double, const double*, const double*, const double*, const double*, double*);
 #else
 template FNEAResult<float, uint32_t> fnea_partition_level<float, uint32_t>(
     uint32_t, uint32_t, const float*, const float*, const float*, const float*, const float*, const float*,
@@ -682,11 +683,11 @@ template void compute_shape_heterogeneity<double, uint32_t>(
 template void rebuild_edges<uint32_t>(
     uint32_t, const uint32_t*, const uint32_t*, std::vector<uint32_t>&);
 
-template void compute_merged_bounding_box<float>(
-    const float*, const float*, const float*, const float*, float*);
+template void compute_merged_covariance_matrix<float>(
+    float, float, const float*, const float*, const float*, const float*, float*);
 
-template void compute_merged_bounding_box<double>(
-    const double*, const double*, const double*, const double*, double*);
+template void compute_merged_covariance_matrix<double>(
+    double, double, const double*, const double*, const double*, const double*, double*);
 #endif
 
 } // namespace fnea

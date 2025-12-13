@@ -87,7 +87,8 @@ if name in to_compile:
         # list source files
         ["cpython/fnea_partition_cpy.cpp", "../src/fnea_partition.cpp"],
         include_dirs=[numpy.get_include(), # find the Numpy headers
-                "../include"],
+                "../include",
+                "/usr/include/eigen3"],
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args)
 

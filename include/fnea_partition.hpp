@@ -196,6 +196,8 @@ void edge_list_to_forward_star(
  * @brief Compute merged bounding box extents
  * 
  * @tparam real_t Floating point type
+ * @param n1 Size of first node
+ * @param n2 Size of second node
  * @param c1 Center of first box [3]
  * @param c2 Center of second box [3]
  * @param cov1 Extents of first covariance matrix [9]
@@ -204,8 +206,8 @@ void edge_list_to_forward_star(
  */
 template<typename real_t>
 void compute_merged_covariance_matrix(
-    const real_t* n1,
-    const real_t* n2,
+    real_t n1,
+    real_t n2,
     const real_t* c1,
     const real_t* c2,
     const real_t* cov1,
