@@ -155,9 +155,9 @@ TPL void compute_shape_heterogeneity(
         auto eigs_merged = solver_merged.eigenvalues();
         
         // Compute compactness as eigen-based scattering (ratio of smallest to largest eigenvalue)
-        real_t comp1 = eigs_u(0) / (eigs_u(2) + real_t(1e-10));   // scattering = λ_min / λ_max
-        real_t comp2 = eigs_v(0) / (eigs_v(2) + real_t(1e-10));
-        real_t compm = eigs_merged(0) / (eigs_merged(2) + real_t(1e-10));
+        real_t comp1 = (eigs_u(0) + eigs_u(1)) / (eigs_u(2) + real_t(1e-10));   // scattering = λ_min / λ_max
+        real_t comp2 = (eigs_v(0) + eigs_v(1)) / (eigs_v(2) + real_t(1e-10));
+        real_t compm = (eigs_merged(0) + eigs_merged(1)) / (eigs_merged(2) + real_t(1e-10));
         
         // Compute shape heterogeneity increase
         auto hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
