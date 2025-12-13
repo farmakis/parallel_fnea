@@ -177,6 +177,12 @@ TPL void compute_shape_heterogeneity(
         auto eigs_v = solver_v.eigenvalues();
         auto eigs_merged = solver_merged.eigenvalues();
         
+        // Normalize eigenvalues by the maximum (last) eigenvalue
+        real_t eps = std::numeric_limits<real_t>::epsilon();
+        eigs_u /= eigs_u(2) + eps;
+        eigs_v /= eigs_v(2) + eps;
+        eigs_merged /= eigs_merged(2) + eps;
+        
         // Compute a 3D compactness index based on volume-to-surface ratio
         real_t comp1 = compute_compactness_helper(eigs_u);
         real_t comp2 = compute_compactness_helper(eigs_v);
