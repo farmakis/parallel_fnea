@@ -35,7 +35,7 @@ PyObject* vector_to_numpy_array(const std::vector<T>& vec, int numpy_type, npy_i
 static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObject* kwargs) {
     // Input arguments
     PyArrayObject *coords_array = nullptr, *pos_array = nullptr, *x_array = nullptr, *h_array = nullptr;
-    PyArrayObject *bb_array = nullptr, *rgb_array = nullptr;
+    PyArrayObject *cov_array = nullptr, *rgb_array = nullptr;
     PyArrayObject *source_csr_array = nullptr, *target_array = nullptr;
     PyArrayObject *edge_weights_array = nullptr, *vert_weights_array = nullptr;
     double scale_factor = 10.0, compactness = 0.2, spatial_weight = 0.5;
@@ -44,7 +44,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
     int is_double = 0;
     
     static char* kwlist[] = {
-        "coords", "pos", "x", "h", "bb", "rgb", "source_csr", "target", "edge_weights", "vert_weights",
+        "coords", "pos", "x", "h", "cov", "rgb", "source_csr", "target", "edge_weights", "vert_weights",
         "scale_factor", "compactness", "spatial_weight", "verbose", "max_num_threads",
         "balance_parallel_split", "is_double", "compute_time", "compute_list", "compute_graph",
         nullptr
@@ -55,7 +55,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
                                      &PyArray_Type, &pos_array,
                                      &PyArray_Type, &x_array,
                                      &PyArray_Type, &h_array,
-                                     &PyArray_Type, &bb_array,
+                                     &PyArray_Type, &cov_array,
                                      &PyArray_Type, &rgb_array,
                                      &PyArray_Type, &source_csr_array,
                                      &PyArray_Type, &target_array,
@@ -77,7 +77,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             PyArray_TYPE(pos_array) != float_type || !(PyArray_FLAGS(pos_array) & NPY_ARRAY_C_CONTIGUOUS) ||
             PyArray_TYPE(x_array) != float_type || !(PyArray_FLAGS(x_array) & NPY_ARRAY_C_CONTIGUOUS) ||
             PyArray_TYPE(h_array) != float_type || !(PyArray_FLAGS(h_array) & NPY_ARRAY_C_CONTIGUOUS) ||
-            PyArray_TYPE(bb_array) != float_type || !(PyArray_FLAGS(bb_array) & NPY_ARRAY_C_CONTIGUOUS) ||
+            PyArray_TYPE(cov_array) != float_type || !(PyArray_FLAGS(cov_array) & NPY_ARRAY_C_CONTIGUOUS) ||
             PyArray_TYPE(rgb_array) != float_type || !(PyArray_FLAGS(rgb_array) & NPY_ARRAY_C_CONTIGUOUS) ||
             PyArray_TYPE(source_csr_array) != index_type || !(PyArray_FLAGS(source_csr_array) & NPY_ARRAY_C_CONTIGUOUS) ||
             PyArray_TYPE(target_array) != index_type || !(PyArray_FLAGS(target_array) & NPY_ARRAY_C_CONTIGUOUS) ||
@@ -96,7 +96,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             PyArray_DIM(pos_array, 1) != 3 ||
             PyArray_DIM(x_array, 0) != num_nodes ||
             PyArray_DIM(h_array, 0) != num_nodes || PyArray_DIM(h_array, 1) != num_features ||
-            PyArray_DIM(bb_array, 0) != num_nodes || PyArray_DIM(bb_array, 1) != 3 ||
+            PyArray_DIM(cov_array, 0) != num_nodes || PyArray_DIM(cov_array, 1) != 3 || PyArray_DIM(cov_array, 2) != 3 ||
             PyArray_DIM(rgb_array, 0) != num_nodes || PyArray_DIM(rgb_array, 1) != 3 ||
             PyArray_DIM(source_csr_array, 0) != num_nodes + 1 ||
             PyArray_DIM(vert_weights_array, 0) != num_nodes) {
@@ -109,7 +109,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
         void* pos_data = PyArray_DATA(pos_array);
         void* x_data = PyArray_DATA(x_array);
         void* h_data = PyArray_DATA(h_array);
-        void* bb_data = PyArray_DATA(bb_array);
+        void* cov_data = PyArray_DATA(cov_array);
         void* rgb_data = PyArray_DATA(rgb_array);
         uint32_t* source_csr_data = static_cast<uint32_t*>(PyArray_DATA(source_csr_array));
         uint32_t* target_data = static_cast<uint32_t*>(PyArray_DATA(target_array));
@@ -125,7 +125,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             const double* pos_ptr = static_cast<const double*>(pos_data);
             const double* x_ptr = static_cast<const double*>(x_data);
             const double* h_ptr = static_cast<const double*>(h_data);
-            const double* bb_ptr = static_cast<const double*>(bb_data);
+            const double* cov_ptr = static_cast<const double*>(cov_data);
             const double* rgb_ptr = static_cast<const double*>(rgb_data);
             
             auto fnea_result = fnea::fnea_partition_level<double, uint32_t>(
@@ -135,7 +135,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
                 pos_ptr,
                 x_ptr,
                 h_ptr,
-                bb_ptr,
+                cov_ptr,
                 rgb_ptr,
                 source_csr_data,
                 target_data,
@@ -166,9 +166,9 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             PyObject* pos_out_array = vector_to_numpy_array(
                 fnea_result.pos, NPY_FLOAT64, pos_dims, 2);
             
-            npy_intp bb_dims[] = {static_cast<npy_intp>(fnea_result.final_num_nodes), 3};
-            PyObject* bb_out_array = vector_to_numpy_array(
-                fnea_result.bb, NPY_FLOAT64, bb_dims, 2);
+            npy_intp cov_dims[] = {static_cast<npy_intp>(fnea_result.final_num_nodes), 3, 3};
+            PyObject* cov_out_array = vector_to_numpy_array(
+                fnea_result.cov, NPY_FLOAT64, cov_dims, 3);
             
             npy_intp rgb_dims[] = {static_cast<npy_intp>(fnea_result.final_num_nodes), 3};
             PyObject* rgb_out_array = vector_to_numpy_array(
@@ -217,12 +217,12 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             }
             
             // Build result tuple (9 items):
-            // (super_index, coords, pos, bb, rgb, x_c, cluster, edges, times)
+            // (super_index, coords, pos, cov, rgb, x_c, cluster, edges, times)
             result = PyTuple_New(9);
             PyTuple_SetItem(result, 0, super_index_array);
             PyTuple_SetItem(result, 1, coords_out_array);
             PyTuple_SetItem(result, 2, pos_out_array);
-            PyTuple_SetItem(result, 3, bb_out_array);
+            PyTuple_SetItem(result, 3, cov_out_array);
             PyTuple_SetItem(result, 4, rgb_out_array);
             PyTuple_SetItem(result, 5, x_c_array);
             PyTuple_SetItem(result, 6, cluster_list);
@@ -236,7 +236,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             const float* pos_ptr = static_cast<const float*>(pos_data);
             const float* x_ptr = static_cast<const float*>(x_data);
             const float* h_ptr = static_cast<const float*>(h_data);
-            const float* bb_ptr = static_cast<const float*>(bb_data);
+            const float* cov_ptr = static_cast<const float*>(cov_data);
             const float* rgb_ptr = static_cast<const float*>(rgb_data);
             
             auto fnea_result = fnea::fnea_partition_level<float, uint32_t>(
@@ -246,7 +246,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
                 pos_ptr,
                 x_ptr,
                 h_ptr,
-                bb_ptr,
+                cov_ptr,
                 rgb_ptr,
                 source_csr_data,
                 target_data,
@@ -276,9 +276,9 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             PyObject* pos_out_array = vector_to_numpy_array(
                 fnea_result.pos, NPY_FLOAT32, pos_dims, 2);
             
-            npy_intp bb_dims[] = {static_cast<npy_intp>(fnea_result.final_num_nodes), 3};
-            PyObject* bb_out_array = vector_to_numpy_array(
-                fnea_result.bb, NPY_FLOAT32, bb_dims, 2);
+            npy_intp cov_dims[] = {static_cast<npy_intp>(fnea_result.final_num_nodes), 3, 3};
+            PyObject* cov_out_array = vector_to_numpy_array(
+                fnea_result.cov, NPY_FLOAT32, cov_dims, 3);
             
             npy_intp rgb_dims[] = {static_cast<npy_intp>(fnea_result.final_num_nodes), 3};
             PyObject* rgb_out_array = vector_to_numpy_array(
@@ -327,12 +327,12 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
             }
             
             // Build result tuple (9 items):
-            // (super_index, coords, pos, bb, rgb, x_c, cluster, edges, times)
+            // (super_index, coords, pos, cov, rgb, x_c, cluster, edges, times)
             result = PyTuple_New(9);
             PyTuple_SetItem(result, 0, super_index_array);
             PyTuple_SetItem(result, 1, coords_out_array);
             PyTuple_SetItem(result, 2, pos_out_array);
-            PyTuple_SetItem(result, 3, bb_out_array);
+            PyTuple_SetItem(result, 3, cov_out_array);
             PyTuple_SetItem(result, 4, rgb_out_array);
             PyTuple_SetItem(result, 5, x_c_array);
             PyTuple_SetItem(result, 6, cluster_list);

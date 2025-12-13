@@ -27,7 +27,7 @@ struct FNEAResult {
     std::vector<index_t> super_index;     ///< Mapping from original to super nodes
     std::vector<real_t> coords;           ///< Updated node grid coordinates
     std::vector<real_t> pos;              ///< Updated node positions
-    std::vector<real_t> bb;               ///< Updated bounding boxes
+    std::vector<real_t> cov;              ///< Updated covariance matrices (flattened 3x3)
     std::vector<real_t> rgb;              ///< Updated node colors
     std::vector<real_t> x_c;              ///< Concatenated features and heterogeneity
     
@@ -63,7 +63,7 @@ struct FNEAResult {
  * @param pos Node positions [num_nodes * 3]
  * @param x Node features [num_nodes * num_features]
  * @param h Node heterogeneity [num_nodes * num_features]
- * @param bb Node bounding boxes [num_nodes * 3]
+ * @param cov Node covariance matrices [num_nodes * 3 * 3]
  * @param rgb Node colors [num_nodes * 3]
  * @param source_csr CSR source indices [num_nodes + 1]
  * @param target CSR target indices [num_edges]
@@ -89,7 +89,7 @@ FNEAResult<real_t, index_t> fnea_partition_level(
     const real_t* pos,
     const real_t* x,
     const real_t* h,
-    const real_t* bb,
+    const real_t* cov,
     const real_t* rgb,
     const index_t* source_csr,
     const index_t* target,
@@ -139,7 +139,7 @@ void compute_feature_heterogeneity(
  * @param edges Edge list [num_edges * 2]
  * @param n Node sizes [num_nodes]
  * @param pos Node positions [num_nodes * 3]
- * @param bb Node bounding boxes [num_nodes * 3]
+ * @param cov Node covariance matrices [num_nodes * 3 * 3]
  * @param compactness Compactness parameter
  * @param hs_out Output shape heterogeneity increases [num_edges]
  */
@@ -149,7 +149,7 @@ void compute_shape_heterogeneity(
     const index_t* edges,
     const real_t* n,
     const real_t* pos,
-    const real_t* bb,
+    const real_t* cov,
     real_t compactness,
     real_t* hs_out
 );
@@ -198,17 +198,19 @@ void edge_list_to_forward_star(
  * @tparam real_t Floating point type
  * @param c1 Center of first box [3]
  * @param c2 Center of second box [3]
- * @param bb1 Extents of first box [3]
- * @param bb2 Extents of second box [3]
- * @param bb_merged_out Output merged bounding box [3]
+ * @param cov1 Extents of first covariance matrix [9]
+ * @param cov2 Extents of second covariance matrix [9]
+ * @param cov_merged_out Output merged covariance matrix [9]
  */
 template<typename real_t>
-void compute_merged_bounding_box(
+void compute_merged_covariance_matrix(
+    const real_t* n1,
+    const real_t* n2,
     const real_t* c1,
     const real_t* c2,
-    const real_t* bb1,
-    const real_t* bb2,
-    real_t* bb_merged_out
+    const real_t* cov1,
+    const real_t* cov2,
+    real_t* cov_merged_out
 );
 
 } // namespace fnea

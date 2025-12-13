@@ -31,25 +31,40 @@ struct PairHash {
         return std::hash<index_t>{}(p.first) ^ (std::hash<index_t>{}(p.second) << 1);
     }
 };
-
 template<typename real_t>
-void compute_merged_bounding_box(
+void compute_merged_covariance_matrix(
+    const real_t* n1,
+    const real_t* n2,
     const real_t* c1,
     const real_t* c2,
-    const real_t* bb1,
-    const real_t* bb2,
-    real_t* bb_merged_out) {
+    const real_t* cov1,
+    const real_t* cov2,
+    real_t* cov_merged_out) {
     
+    real_t n_total = n1 + n2;
+    
+    // Compute merged centroid
+    real_t c_merged[3];
     for (int i = 0; i < 3; ++i) {
-        real_t minbound1 = c1[i] - bb1[i] / 2;
-        real_t minbound2 = c2[i] - bb2[i] / 2;
-        real_t maxbound1 = c1[i] + bb1[i] / 2;
-        real_t maxbound2 = c2[i] + bb2[i] / 2;
-        
-        real_t minbound = std::min(minbound1, minbound2);
-        real_t maxbound = std::max(maxbound1, maxbound2);
-        
-        bb_merged_out[i] = maxbound - minbound;
+        c_merged[i] = (n1 * c1[i] + n2 * c2[i]) / n_total;
+    }
+    
+    // Compute displacement vectors
+    real_t d1[3], d2[3];
+    for (int i = 0; i < 3; ++i) {
+        d1[i] = c1[i] - c_merged[i];
+        d2[i] = c2[i] - c_merged[i];
+    }
+    
+    // Compute outer products d1*d1^T and d2*d2^T, then apply parallel axis theorem
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            real_t d1d1t = d1[i] * d1[j];
+            real_t d2d2t = d2[i] * d2[j];
+            
+            cov_merged_out[i * 3 + j] = 
+                (n1 * (cov1[i * 3 + j] + d1d1t) + n2 * (cov2[i * 3 + j] + d2d2t)) / n_total;
+        }
     }
 }
 
@@ -94,7 +109,7 @@ TPL void compute_shape_heterogeneity(
     const index_t* edges,
     const real_t* n,
     const real_t* coords,
-    const real_t* bb,
+    const real_t* cov,
     real_t compactness,
     real_t* hs_out) {
     
@@ -103,32 +118,48 @@ TPL void compute_shape_heterogeneity(
         index_t u = edges[2 * e];
         index_t v = edges[2 * e + 1];
         
-        real_t n1 = n[u];
-        real_t n2 = n[v];
+        const real_t* n1 = &n[u];
+        const real_t* n2 = &n[v];
         
-        // Get node grid coordinates and bounding boxes
+        // Get node grid coordinates and covariance matrices
         const real_t* coords_u = &coords[u * 3];
         const real_t* coords_v = &coords[v * 3];
-        const real_t* bb_u = &bb[u * 3];
-        const real_t* bb_v = &bb[v * 3];
+        const real_t* cov_u = &cov[u * 9];
+        const real_t* cov_v = &cov[v * 9];
         
-        // Compute merged bounding box
-        real_t bb_merged[3];
-        compute_merged_bounding_box(coords_u, coords_v, bb_u, bb_v, bb_merged);
+        // Compute merged covariance matrix
+        real_t cov_merged[9];
+        compute_merged_covariance_matrix(n1, n2, coords_u, coords_v, cov_u, cov_v, cov_merged);
         
-        // Compute compactness measures
-        real_t comp1 = 0, comp2 = 0, compm = 0;
+        // Use Eigen for eigenvalue computation
+        Eigen::Matrix<real_t, 3, 3> mat_u, mat_v, mat_merged;
+        
+        // Map covariance matrices to Eigen matrices (row-major)
         for (int i = 0; i < 3; ++i) {
-            comp1 += bb_u[i];
-            comp2 += bb_v[i];
-            compm += bb_merged[i];
+            for (int j = 0; j < 3; ++j) {
+            mat_u(i, j) = cov_u[i * 3 + j];
+            mat_v(i, j) = cov_v[i * 3 + j];
+            mat_merged(i, j) = cov_merged[i * 3 + j];
+            }
         }
-        comp1 = (comp1 / 3.0) / std::cbrt(n1);
-        comp2 = (comp2 / 3.0) / std::cbrt(n2);
-        compm = (compm / 3.0) / std::cbrt(n1 + n2);
+        
+        // Compute eigenvalues using Eigen's SelfAdjointEigenSolver
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix<real_t, 3, 3>> solver_u(mat_u);
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix<real_t, 3, 3>> solver_v(mat_v);
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix<real_t, 3, 3>> solver_merged(mat_merged);
+        
+        // Get eigenvalues (already sorted in ascending order by Eigen)
+        auto eigs_u = solver_u.eigenvalues();
+        auto eigs_v = solver_v.eigenvalues();
+        auto eigs_merged = solver_merged.eigenvalues();
+        
+        // Compute compactness as eigen-based scattering (ratio of smallest to largest eigenvalue)
+        real_t comp1 = eigs_u(0) / (eigs_u(2) + real_t(1e-10));   // scattering = λ_min / λ_max
+        real_t comp2 = eigs_v(0) / (eigs_v(2) + real_t(1e-10));
+        real_t compm = eigs_merged(0) / (eigs_merged(2) + real_t(1e-10));
         
         // Compute shape heterogeneity increase
-        hs_out[e] = (n1 + n2) * compm - (n1 * comp1 + n2 * comp2);
+        hs_out[e] = (*n1 + *n2) * compm - (*n1 * comp1 + *n2 * comp2);
     }
 }
 
@@ -232,7 +263,7 @@ TPL FNEA_RESULT fnea_partition_level(
     const real_t* pos,
     const real_t* x,
     const real_t* h,
-    const real_t* bb,
+    const real_t* cov,
     const real_t* rgb,
     const index_t* source_csr,
     const index_t* target,
@@ -265,7 +296,7 @@ TPL FNEA_RESULT fnea_partition_level(
     std::vector<real_t> current_pos(pos, pos + num_nodes * 3);
     std::vector<real_t> current_x(x, x + num_nodes * num_features);
     std::vector<real_t> current_h(h, h + num_nodes * num_features);
-    std::vector<real_t> current_bb(bb, bb + num_nodes * 3);
+    std::vector<real_t> current_cov(cov, cov + num_nodes * 9);
     std::vector<real_t> current_rgb(rgb, rgb + num_nodes * 3);
     
     std::vector<index_t> super_index(num_nodes);
@@ -385,11 +416,12 @@ TPL FNEA_RESULT fnea_partition_level(
                                 (n_u * current_x[u * num_features + f] + n_v * current_x[v * num_features + f]) / total_n;
                         }
                         
-                        // Update bounding box (merged extents)
-                        compute_merged_bounding_box(
+                        // Update covariance matrix (merged geometries)
+                        compute_merged_covariance_matrix(
+                            &n_u, &n_v,
                             &current_coords[u * 3], &current_coords[v * 3],
-                            &current_bb[u * 3], &current_bb[v * 3],
-                            &current_bb[u * 3]
+                            &current_cov[u * 9], &current_cov[v * 9],
+                            &current_cov[u * 9]
                         );
 
                         // Update grid coordinates (weighted average)
@@ -423,7 +455,9 @@ TPL FNEA_RESULT fnea_partition_level(
                             current_coords[v * 3 + dim] = 0;
                             current_pos[v * 3 + dim] = 0;
                             current_rgb[v * 3 + dim] = 0;
-                            current_bb[v * 3 + dim] = 0;
+                        }
+                        for (int eig = 0; eig < 9; ++eig) {
+                            current_cov[v * 9 + eig] = 0;
                         }
                         
                         local_merges++;
@@ -468,7 +502,7 @@ TPL FNEA_RESULT fnea_partition_level(
         std::vector<real_t> new_pos(new_num_nodes * 3);
         std::vector<real_t> new_x(new_num_nodes * num_features);
         std::vector<real_t> new_h(new_num_nodes * num_features);
-        std::vector<real_t> new_bb(new_num_nodes * 3);
+        std::vector<real_t> new_cov(new_num_nodes * 9);
         std::vector<real_t> new_rgb(new_num_nodes * 3);
 
         new_index = 0;
@@ -478,7 +512,7 @@ TPL FNEA_RESULT fnea_partition_level(
                 for (int d = 0; d < 3; ++d) {
                     new_coords[new_index * 3 + d] = current_coords[i * 3 + d];
                     new_pos[new_index * 3 + d] = current_pos[i * 3 + d];
-                    new_bb[new_index * 3 + d] = current_bb[i * 3 + d];
+                    new_cov[new_index * 9 + d] = current_cov[i * 9 + d];
                     new_rgb[new_index * 3 + d] = current_rgb[i * 3 + d];
                 }
                 for (index_t f = 0; f < num_features; ++f) {
@@ -525,7 +559,7 @@ TPL FNEA_RESULT fnea_partition_level(
         
         compute_shape_heterogeneity(
             new_num_edges, reduced_edge_index.data(),
-            new_n.data(), new_coords.data(), new_bb.data(),
+            new_n.data(), new_coords.data(), new_cov.data(),
             compactness, hs.data()
         );
 
@@ -540,7 +574,7 @@ TPL FNEA_RESULT fnea_partition_level(
         current_pos = std::move(new_pos);
         current_x = std::move(new_x);
         current_h = std::move(new_h);
-        current_bb = std::move(new_bb);
+        current_cov = std::move(new_cov);
         current_rgb = std::move(new_rgb);
         current_num_nodes = new_num_nodes;
         current_source = std::move(new_source);
@@ -558,7 +592,7 @@ TPL FNEA_RESULT fnea_partition_level(
     result.super_index = std::move(super_index);
     result.coords = std::move(current_coords);
     result.pos = std::move(current_pos);
-    result.bb = std::move(current_bb);
+    result.cov = std::move(current_cov);
     result.rgb = std::move(current_rgb);
     result.source_csr = std::move(current_source);
     result.target = std::move(current_target);

@@ -10,7 +10,7 @@ if bin_path not in sys.path:
 from fnea_partition_cpy import fnea_partition_level_cpy
 
 def fnea_partition_level(
-    coords, pos, x, h, bb, rgb, source_csr, target, edge_weights, vert_weights,
+    coords, pos, x, h, cov, rgb, source_csr, target, edge_weights, vert_weights,
     scale_factor=10.0, compactness=0.2, spatial_weight=0.5,
     verbose=False, max_num_threads=0, balance_parallel_split=True,
     compute_time=True, compute_list=True, compute_graph=True):
@@ -31,8 +31,8 @@ def fnea_partition_level(
         Node features, shape (num_nodes, num_features), C-contiguous
     h : numpy.ndarray
         Node heterogeneity, shape (num_nodes, num_features), C-contiguous  
-    bb : numpy.ndarray
-        Node bounding boxes, shape (num_nodes, 3), C-contiguous
+    cov : numpy.ndarray
+        Node covariance matrices, shape (num_nodes, 3, 3), C-contiguous
     rgb : numpy.ndarray
         Node colors, shape (num_nodes, 3), C-contiguous
     source_csr : numpy.ndarray
@@ -70,8 +70,8 @@ def fnea_partition_level(
         Updated node grid coordinates, shape (num_final_nodes, 3), same type as input
     pos_out : numpy.ndarray
         Updated node positions, shape (num_final_nodes, 3), same type as input
-    bb_out : numpy.ndarray
-        Updated bounding boxes, shape (num_final_nodes, 3), same type as input
+    cov_out : numpy.ndarray
+        Updated covariance matrices, shape (num_final_nodes, 3, 3), same type as input
     rgb_out : numpy.ndarray
         Updated node colors, shape (num_final_nodes, 3), same type as input
     x_c : numpy.ndarray
@@ -113,7 +113,7 @@ def fnea_partition_level(
     >>> pos = np.random.rand(num_nodes, 3).astype(np.float32)
     >>> x = np.random.rand(num_nodes, num_features).astype(np.float32)
     >>> h = np.zeros_like(x)
-    >>> bb = np.ones((num_nodes, 3), dtype=np.float32)
+    >>> cov = np.zeros((num_nodes, 3, 3), dtype=np.float32)
     >>> rgb = np.random.rand(num_nodes, 3).astype(np.float32)
     >>> 
     >>> # Simple graph (each node connected to next)
@@ -123,8 +123,8 @@ def fnea_partition_level(
     >>> vert_weights = np.ones(num_nodes, dtype=np.float32)
     >>> 
     >>> # Run FNEA partition
-    >>> super_index, pos_out, bb_out, rgb_out, x_c, cluster, edges, times = \\
-    ...     fnea_partition_level(pos, x, h, bb, rgb, source_csr, target, 
+    >>> super_index, pos_out, cov_out, rgb_out, x_c, cluster, edges, times = \\
+    ...     fnea_partition_level(pos, x, h, cov, rgb, source_csr, target, 
     ...                         edge_weights, vert_weights, scale_factor=5.0)
     >>> 
     >>> print(f"Reduced from {num_nodes} to {pos_out.shape[0]} nodes")
@@ -150,7 +150,7 @@ def fnea_partition_level(
         'pos': (pos, (3, None)),
         'x': (x, (None, None)), 
         'h': (h, (None, None)),
-        'bb': (bb, (3, None)),
+        'cov': (cov, (3, 3, None)),
         'rgb': (rgb, (3, None)),
         'edge_weights': (edge_weights, (None,)),
         'vert_weights': (vert_weights, (None,))
@@ -219,8 +219,8 @@ def fnea_partition_level(
     if h.shape != (num_nodes, num_features):
         raise ValueError("FNEA partition: 'h' must have shape (num_nodes, num_features)")
     
-    if bb.shape != (num_nodes, 3):
-        raise ValueError("FNEA partition: 'bb' must have shape (num_nodes, 3)")
+    if cov.shape != (num_nodes, 3, 3):
+        raise ValueError("FNEA partition: 'cov' must have shape (num_nodes, 3, 3)")
         
     if rgb.shape != (num_nodes, 3):
         raise ValueError("FNEA partition: 'rgb' must have shape (num_nodes, 3)")
@@ -265,7 +265,7 @@ def fnea_partition_level(
     pos_c = np.ascontiguousarray(pos)
     x_c = np.ascontiguousarray(x) 
     h_c = np.ascontiguousarray(h)
-    bb_c = np.ascontiguousarray(bb)
+    cov_c = np.ascontiguousarray(cov)
     rgb_c = np.ascontiguousarray(rgb)
     edge_weights_c = np.ascontiguousarray(edge_weights)
     vert_weights_c = np.ascontiguousarray(vert_weights)
@@ -278,7 +278,7 @@ def fnea_partition_level(
         pos_c, 
         x_c, 
         h_c, 
-        bb_c, 
+        cov_c, 
         rgb_c, 
         source_csr_c, 
         target_c, 
