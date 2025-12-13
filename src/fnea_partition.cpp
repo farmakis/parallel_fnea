@@ -105,29 +105,6 @@ TPL void compute_feature_heterogeneity(
     }
 }
 
-namespace {
-    template<typename EigType>
-    typename EigType::Scalar compute_compactness_helper(const EigType& eigenvalues) {
-        typedef typename EigType::Scalar real_t;
-        
-        // Compute a 3D compactness index based on volume-to-surface ratio
-        real_t volume = eigenvalues(0) * eigenvalues(1) * eigenvalues(2);
-        real_t surface_area =
-            eigenvalues(0) * eigenvalues(1) +
-            eigenvalues(1) * eigenvalues(2) +
-            eigenvalues(2) * eigenvalues(0);
-
-        real_t eps = std::numeric_limits<real_t>::epsilon();
-        real_t volume_safe = std::max(volume, eps);
-        real_t surface_area_safe = std::max(surface_area, eps);
-
-        // Compactness = (36 * pi * V^2) / (S^3)
-        real_t comp = (36.0 * M_PI * std::pow(volume_safe, 2)) / std::pow(surface_area_safe, 3);
-        real_t comp_shere = 36.0 * M_PI / std::pow(6, 1.5); // compactness of a sphere
-        return comp /= comp_shere;  // normalize to [0,1], where 1 is a perfect sphere
-    }
-}
-
 TPL void compute_shape_heterogeneity(
     index_t num_edges,
     const index_t* edges,
