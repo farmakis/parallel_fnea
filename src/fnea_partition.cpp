@@ -156,13 +156,13 @@ TPL void compute_shape_heterogeneity(
         
         // Compute OBB extents from eigenvalues
         // For an ellipsoid with eigenvalues λ₁, λ₂, λ₃ (variances):
-        // Extent along each axis ≈ 2*sqrt(λᵢ) (roughly 2σ coverage)
+        // Extent along each axis ≈ 3*sqrt(λᵢ) (roughly 3σ coverage)
         real_t eps = std::numeric_limits<real_t>::epsilon();
         real_t extent1[3], extent2[3], extentm[3];
         for (int i = 0; i < 3; ++i) {
-            extent1[i] = 2.0 * std::sqrt(std::max(eigs_u(i), eps));
-            extent2[i] = 2.0 * std::sqrt(std::max(eigs_v(i), eps));
-            extentm[i] = 2.0 * std::sqrt(std::max(eigs_merged(i), eps));
+            extent1[i] = 3.0 * std::sqrt(std::max(eigs_u(i), eps));
+            extent2[i] = 3.0 * std::sqrt(std::max(eigs_v(i), eps));
+            extentm[i] = 3.0 * std::sqrt(std::max(eigs_merged(i), eps));
         }
         
         // Compute compactness: mean extent / cube root of point count
