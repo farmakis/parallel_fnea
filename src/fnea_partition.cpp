@@ -163,30 +163,54 @@ TPL void compute_shape_heterogeneity(
         // Ensure numerical stability
         real_t eps = std::numeric_limits<real_t>::epsilon();
         
+        // Normalize eigenvalues so they sum to 1 (represent fractions of total variance)
+        real_t sum_eigs_u = 0.0, sum_eigs_v = 0.0, sum_eigs_m = 0.0;
+        for (int i = 0; i < 3; ++i) {
+            sum_eigs_u += std::max(eigs_u(i), eps);
+            sum_eigs_v += std::max(eigs_v(i), eps);
+            sum_eigs_m += std::max(eigs_merged(i), eps);
+        }
+        
+        // Avoid division by zero
+        sum_eigs_u = std::max(sum_eigs_u, eps);
+        sum_eigs_v = std::max(sum_eigs_v, eps);
+        sum_eigs_m = std::max(sum_eigs_m, eps);
+        
         // ============ DIMENSIONALITY HETEROGENEITY ============
-        // Per-eigenvalue heterogeneity: h_dim = |n_merged * λ_merged - (n1*λ1 + n2*λ2)|
+        // Per-eigenvalue heterogeneity using normalized eigenvalues
+        // h_dim = |n_merged * λ_merged_norm - (n1*λ1_norm + n2*λ2_norm)|
         // Sum across all 3 eigenvalues
         real_t h_dimensionality = 0.0;
         for (int i = 0; i < 3; ++i) {
-            real_t eig_u = std::max(eigs_u(i), eps);
-            real_t eig_v = std::max(eigs_v(i), eps);
-            real_t eig_m = std::max(eigs_merged(i), eps);
-            real_t h_dim_i = std::abs(n_total * eig_m - (n1 * eig_u + n2 * eig_v));
+            real_t eig_u_norm = std::max(eigs_u(i), eps) / sum_eigs_u;
+            real_t eig_v_norm = std::max(eigs_v(i), eps) / sum_eigs_v;
+            real_t eig_m_norm = std::max(eigs_merged(i), eps) / sum_eigs_m;
+            real_t h_dim_i = std::abs(n_total * eig_m_norm - (n1 * eig_u_norm + n2 * eig_v_norm));
             h_dimensionality += h_dim_i;
         }
         
         // ============ ORIENTATION HETEROGENEITY ============
         // Extract normal vectors (principal direction = eigenvector of smallest eigenvalue)
         // Smallest eigenvalue is at index 0 (Eigen sorts in ascending order)
+        // Note: Eigenvectors from Eigen are already unit vectors (normalized to magnitude 1)
         Eigen::Matrix<real_t, 3, 1> normal1 = eigvecs_u.col(0);
         Eigen::Matrix<real_t, 3, 1> normal2 = eigvecs_v.col(0);
         Eigen::Matrix<real_t, 3, 1> normalm = eigvecsm.col(0);
         
-        // Per-axis orientation heterogeneity: h_orient = |n_merged * normal_m - (n1*normal1 + n2*normal2)|
+        // Compute magnitude of merged normal for normalization
+        real_t mag_m = normalm.norm();
+        mag_m = std::max(mag_m, eps);
+        
+        // Per-axis orientation heterogeneity with normalized eigenvector components
+        // h_orient = |n_merged * (normal_m_norm) - (n1*normal1_norm + n2*normal2_norm)|
         // Sum across all 3 spatial axes
         real_t h_orientation = 0.0;
         for (int i = 0; i < 3; ++i) {
-            real_t h_orient_i = std::abs(n_total * normalm(i) - (n1 * normal1(i) + n2 * normal2(i)));
+            // Normalize eigenvector components by magnitude for stability
+            real_t normal_m_norm = normalm(i) / mag_m;
+            real_t normal1_norm = normal1(i);  // Already unit vector from Eigen
+            real_t normal2_norm = normal2(i);  // Already unit vector from Eigen
+            real_t h_orient_i = std::abs(n_total * normal_m_norm - (n1 * normal1_norm + n2 * normal2_norm));
             h_orientation += h_orient_i;
         }
         
