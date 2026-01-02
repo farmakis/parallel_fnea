@@ -11,7 +11,7 @@ from fnea_partition_cpy import fnea_partition_level_cpy
 
 def fnea_partition_level(
     coords, pos, x, h, cov, rgb, source_csr, target, edge_weights, vert_weights,
-    scale_factor=10.0, compactness=0.2, spatial_weight=0.5,
+    scale_factor=10.0, spatial_weight=0.5, dimensionality=0.5,
     verbose=False, max_num_threads=0, balance_parallel_split=True,
     compute_time=True, compute_list=True, compute_graph=True):
     """
@@ -45,10 +45,10 @@ def fnea_partition_level(
         Vertex weights (node sizes), shape (num_nodes,), F-contiguous
     scale_factor : float, optional
         Scale factor for merge threshold, default 10.0
-    compactness : float, optional
-        Compactness parameter [0, 1], default 0.2
     spatial_weight : float, optional
         Weight for spatial vs feature heterogeneity [0, 1], default 0.5
+    dimensionality : float, optional
+        Weight for dimensionality vs orientation heterogeneity [0, 1], default 0.5
     verbose : bool, optional
         Enable verbose output, default False
     max_num_threads : int, optional
@@ -242,8 +242,8 @@ def fnea_partition_level(
     if not isinstance(scale_factor, (int, float)) or scale_factor <= 0:
         raise ValueError("FNEA partition: 'scale_factor' must be a positive number")
     
-    if not isinstance(compactness, (int, float)) or not (0 <= compactness <= 1):
-        raise ValueError("FNEA partition: 'compactness' must be in range [0, 1]")
+    if not isinstance(dimensionality, (int, float)) or not (0 <= dimensionality <= 1):
+        raise ValueError("FNEA partition: 'dimensionality' must be in range [0, 1]")
         
     if not isinstance(spatial_weight, (int, float)) or not (0 <= spatial_weight <= 1):
         raise ValueError("FNEA partition: 'spatial_weight' must be in range [0, 1]")
@@ -285,8 +285,8 @@ def fnea_partition_level(
         edge_weights_c, 
         vert_weights_c,
         float(scale_factor), 
-        float(compactness), 
         float(spatial_weight),
+        float(dimensionality),
         verbose_int, 
         max_num_threads, 
         balance_parallel_split_int,

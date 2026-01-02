@@ -111,7 +111,7 @@ TPL void compute_shape_heterogeneity(
     const real_t* n,
     const real_t* coords,
     const real_t* cov,
-    real_t compactness,
+    real_t dim_weight,
     real_t* hs_out) {
     
     #pragma omp parallel for
@@ -121,6 +121,7 @@ TPL void compute_shape_heterogeneity(
         
         real_t n1 = n[u];
         real_t n2 = n[v];
+        real_t n_total = n1 + n2;
         
         // Get node grid coordinates and covariance matrices
         const real_t* coords_u = &coords[u * 3];
@@ -132,19 +133,19 @@ TPL void compute_shape_heterogeneity(
         real_t cov_merged[9];
         compute_merged_covariance_matrix(n1, n2, coords_u, coords_v, cov_u, cov_v, cov_merged);
         
-        // Use Eigen for eigenvalue computation
+        // Use Eigen for eigenvalue and eigenvector computation
         Eigen::Matrix<real_t, 3, 3> mat_u, mat_v, mat_merged;
         
         // Map covariance matrices to Eigen matrices (row-major)
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
-            mat_u(i, j) = cov_u[i * 3 + j];
-            mat_v(i, j) = cov_v[i * 3 + j];
-            mat_merged(i, j) = cov_merged[i * 3 + j];
+                mat_u(i, j) = cov_u[i * 3 + j];
+                mat_v(i, j) = cov_v[i * 3 + j];
+                mat_merged(i, j) = cov_merged[i * 3 + j];
             }
         }
         
-        // Compute eigenvalues using Eigen's SelfAdjointEigenSolver
+        // Compute eigenvalues and eigenvectors using Eigen's SelfAdjointEigenSolver
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<real_t, 3, 3>> solver_u(mat_u);
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<real_t, 3, 3>> solver_v(mat_v);
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<real_t, 3, 3>> solver_merged(mat_merged);
@@ -154,25 +155,46 @@ TPL void compute_shape_heterogeneity(
         auto eigs_v = solver_v.eigenvalues();
         auto eigs_merged = solver_merged.eigenvalues();
         
-        // Compute OBB extents from eigenvalues
-        // For an ellipsoid with eigenvalues λ₁, λ₂, λ₃ (variances):
-        // Extent along each axis ≈ 3*sqrt(λᵢ) (roughly 3σ coverage)
+        // Get eigenvectors (columns are eigenvectors, sorted by eigenvalues)
+        auto eigvecs_u = solver_u.eigenvectors();
+        auto eigvecs_v = solver_v.eigenvectors();
+        auto eigvecsm = solver_merged.eigenvectors();
+        
+        // Ensure numerical stability
         real_t eps = std::numeric_limits<real_t>::epsilon();
-        real_t extent1[3], extent2[3], extentm[3];
+        
+        // ============ DIMENSIONALITY HETEROGENEITY ============
+        // Per-eigenvalue heterogeneity: h_dim = |n_merged * λ_merged - (n1*λ1 + n2*λ2)|
+        // Sum across all 3 eigenvalues
+        real_t h_dimensionality = 0.0;
         for (int i = 0; i < 3; ++i) {
-            extent1[i] = 3.0 * std::sqrt(std::max(eigs_u(i), eps));
-            extent2[i] = 3.0 * std::sqrt(std::max(eigs_v(i), eps));
-            extentm[i] = 3.0 * std::sqrt(std::max(eigs_merged(i), eps));
+            real_t eig_u = std::max(eigs_u(i), eps);
+            real_t eig_v = std::max(eigs_v(i), eps);
+            real_t eig_m = std::max(eigs_merged(i), eps);
+            real_t h_dim_i = std::abs(n_total * eig_m - (n1 * eig_u + n2 * eig_v));
+            h_dimensionality += h_dim_i;
         }
         
-        // Compute compactness: mean extent / cube root of point count
-        // This represents how "spread out" the points are relative to their count
-        real_t comp1 = (extent1[0] + extent1[1] + extent1[2]) / 3.0 / std::cbrt(n1);
-        real_t comp2 = (extent2[0] + extent2[1] + extent2[2]) / 3.0 / std::cbrt(n2);
-        real_t compm = (extentm[0] + extentm[1] + extentm[2]) / 3.0 / std::cbrt(n1 + n2);
+        // ============ ORIENTATION HETEROGENEITY ============
+        // Extract normal vectors (principal direction = eigenvector of smallest eigenvalue)
+        // Smallest eigenvalue is at index 0 (Eigen sorts in ascending order)
+        Eigen::Matrix<real_t, 3, 1> normal1 = eigvecs_u.col(0);
+        Eigen::Matrix<real_t, 3, 1> normal2 = eigvecs_v.col(0);
+        Eigen::Matrix<real_t, 3, 1> normalm = eigvecsm.col(0);
         
-        // Compute shape heterogeneity increase
-        auto hs = std::abs((n1 + n2) * compm - (n1 * comp1 + n2 * comp2));
+        // Per-axis orientation heterogeneity: h_orient = |n_merged * normal_m - (n1*normal1 + n2*normal2)|
+        // Sum across all 3 spatial axes
+        real_t h_orientation = 0.0;
+        for (int i = 0; i < 3; ++i) {
+            real_t h_orient_i = std::abs(n_total * normalm(i) - (n1 * normal1(i) + n2 * normal2(i)));
+            h_orientation += h_orient_i;
+        }
+        
+        // ============ COMBINED SHAPE HETEROGENEITY ============
+        // Weighted combination of dimensionality and orientation
+        real_t hs = (dim_weight * h_dimensionality + 
+                     (1.0 - dim_weight) * h_orientation);
+        
         hs_out[e] = hs;
     }
 }
@@ -284,8 +306,8 @@ TPL FNEA_RESULT fnea_partition_level(
     const real_t* edge_weights,
     const real_t* vert_weights,
     real_t scale_factor,
-    real_t compactness,
     real_t spatial_weight,
+    real_t dim_weight,
     bool verbose,
     int max_num_threads,
     bool balance_parallel_split,
@@ -577,7 +599,7 @@ TPL FNEA_RESULT fnea_partition_level(
         compute_shape_heterogeneity(
             new_num_edges, reduced_edge_index.data(),
             new_n.data(), new_coords.data(), new_cov.data(),
-            compactness, hs.data()
+            dim_weight, hs.data()
         );
 
         std::vector<real_t> new_edge_weights(new_num_edges);

@@ -38,14 +38,14 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
     PyArrayObject *cov_array = nullptr, *rgb_array = nullptr;
     PyArrayObject *source_csr_array = nullptr, *target_array = nullptr;
     PyArrayObject *edge_weights_array = nullptr, *vert_weights_array = nullptr;
-    double scale_factor = 10.0, compactness = 0.2, spatial_weight = 0.5;
+    double scale_factor = 10.0, spatial_weight = 0.5, dimensionality = 0.5;
     int verbose = 0, max_num_threads = 0, balance_parallel_split = 1;
     int compute_time = 1, compute_list = 1, compute_graph = 1;
     int is_double = 0;
     
     static char* kwlist[] = {
         "coords", "pos", "x", "h", "cov", "rgb", "source_csr", "target", "edge_weights", "vert_weights",
-        "scale_factor", "compactness", "spatial_weight", "verbose", "max_num_threads",
+        "scale_factor", "spatial_weight", "dimensionality", "verbose", "max_num_threads",
         "balance_parallel_split", "is_double", "compute_time", "compute_list", "compute_graph",
         nullptr
     };
@@ -61,7 +61,7 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
                                      &PyArray_Type, &target_array,
                                      &PyArray_Type, &edge_weights_array,
                                      &PyArray_Type, &vert_weights_array,
-                                     &scale_factor, &compactness, &spatial_weight,
+                                     &scale_factor, &spatial_weight, &dimensionality,
                                      &verbose, &max_num_threads, &balance_parallel_split,
                                      &is_double, &compute_time, &compute_list, &compute_graph)) {
         return nullptr;
@@ -142,8 +142,8 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
                 static_cast<const double*>(edge_weights_data),
                 static_cast<const double*>(vert_weights_data),
                 static_cast<double>(scale_factor),
-                static_cast<double>(compactness),
                 static_cast<double>(spatial_weight),
+                static_cast<double>(dimensionality),
                 verbose != 0,
                 max_num_threads,
                 balance_parallel_split != 0,
@@ -253,8 +253,8 @@ static PyObject* fnea_partition_level_cpy(PyObject* self, PyObject* args, PyObje
                 static_cast<const float*>(edge_weights_data),
                 static_cast<const float*>(vert_weights_data),
                 static_cast<float>(scale_factor),
-                static_cast<float>(compactness),
                 static_cast<float>(spatial_weight),
+                static_cast<float>(dimensionality),
                 verbose != 0,
                 max_num_threads,
                 balance_parallel_split != 0,
