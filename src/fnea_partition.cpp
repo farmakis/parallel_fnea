@@ -100,7 +100,7 @@ TPL void compute_feature_heterogeneity(
 
             hf += (n1+n2)*hm - (n1*h1 + n2*h2);
         }
-ß
+
         hf_out[e] = hf;
     }
 }
