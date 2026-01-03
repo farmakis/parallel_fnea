@@ -98,9 +98,9 @@ TPL void compute_feature_heterogeneity(
             // standard deviation proxy of the two nodes mean values
             real_t hm = std::abs(x1 - x2) / 2.0;
 
-            hf += std::abs((n1+n2)*hm - (n1*h1 + n2*h2));
+            hf += (n1+n2)*hm - (n1*h1 + n2*h2);
         }
-
+ß
         hf_out[e] = hf;
     }
 }
@@ -210,7 +210,7 @@ TPL void compute_shape_heterogeneity(
             real_t normal_m_norm = normalm(i) / mag_m;
             real_t normal1_norm = normal1(i);  // Already unit vector from Eigen
             real_t normal2_norm = normal2(i);  // Already unit vector from Eigen
-            real_t h_orient_i = std::abs(n_total * normal_m_norm - (n1 * normal1_norm + n2 * normal2_norm));
+            real_t h_orient_i = n_total * normal_m_norm - (n1 * normal1_norm + n2 * normal2_norm);
             h_orientation += h_orient_i;
         }
         
